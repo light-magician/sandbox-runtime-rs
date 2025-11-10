@@ -1,0 +1,24 @@
+{
+  "filesystem": {
+    "allowed_paths": [
+      "/Users/*/workspace/**",
+      "/tmp/**",
+      "*.txt",
+      "*.json"
+    ],
+    "blocked_paths": [
+      "/etc/shadow",
+      "/etc/passwd",
+      "/Users/*/.ssh/**",
+      "/Users/*/.*_history"
+    ]
+  },
+  "network": {
+    "enabled": true,
+    "allowed_domains": [
+      "*.example.com",
+      "api.github.com",
+      "httpbin.org"
+    ]
+  }
+}

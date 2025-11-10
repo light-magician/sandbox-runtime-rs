@@ -1,0 +1,15 @@
+{
+  "filesystem": {
+    "allowed_paths": ["**"],
+    "blocked_paths": []
+  },
+  "network": {
+    "enabled": true,
+    "allowed_domains": [
+      "*.github.com",
+      "*.githubusercontent.com",
+      "pypi.org",
+      "*.pypi.org"
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "filesystem": {
+    "allowed_paths": [
+      "/tmp/**",
+      "/var/tmp/**"
+    ],
+    "blocked_paths": [
+      "/etc/**",
+      "/Users/*/.ssh/**",
+      "/Users/*/.*"
+    ]
+  },
+  "network": {
+    "enabled": false,
+    "allowed_domains": []
+  }
+}

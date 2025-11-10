@@ -1,0 +1,13 @@
+{
+  "filesystem": {
+    "allowed_paths": ["**"],
+    "blocked_paths": [
+      "/etc/shadow",
+      "/Users/*/.ssh/id_rsa"
+    ]
+  },
+  "network": {
+    "enabled": true,
+    "allowed_domains": ["*.github.com"]
+  }
+}
