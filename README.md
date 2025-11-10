@@ -1,10 +1,15 @@
 # Sandbox Runtime (Rust)
 
+[![CI](https://github.com/light-magician/sandbox-runtime-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/light-magician/sandbox-runtime-rs/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A lightweight sandboxing tool for enforcing filesystem and network restrictions on arbitrary processes at the OS level, without requiring a container.
 
 `srt` uses native OS sandboxing primitives (`sandbox-exec` on macOS) and proxy-based network filtering. It can be used to sandbox the behaviour of agents, local MCP servers, bash commands and arbitrary processes.
 
 This is a Rust implementation of [Anthropic's Sandbox Runtime](https://github.com/anthropics/sandbox-runtime). The original TypeScript implementation is available in the `typescript/` directory.
+
+**Repository:** https://github.com/light-magician/sandbox-runtime-rs
 
 > **Experimental Port**
 >
@@ -225,6 +230,94 @@ Examples:
 - **Linux**: Not yet supported (planned)
 - **Windows**: Not supported
 
+## Performance Characteristics
+
+The Rust implementation exhibits different performance characteristics compared to the TypeScript implementation due to architectural differences (compiled native binary vs. interpreted JavaScript with JIT compilation).
+
+### Measured Metrics
+
+The following measurements were taken on macOS (Apple Silicon) running simple commands through the sandbox:
+
+| Metric | TypeScript | Rust | Notes |
+|--------|-----------|------|-------|
+| **Startup Time** | ~50-100ms | ~16ms | Time to initialize sandbox and execute simple command |
+| **Memory Usage** | ~30-50 MB | ~4.5 MB | Peak RSS during execution |
+| **Binary Size** | ~40 MB | 3.8 MB | Rust: release binary; TypeScript: node_modules + bundled code |
+
+### Methodology Notes
+
+These measurements represent initial observations and should be interpreted with the following considerations:
+
+- **Startup time**: Measured via repeated execution of `echo "hello"` through the sandbox (100 iterations)
+- **Memory usage**: Measured via system monitoring tools during execution
+- **Binary size**: TypeScript includes Node.js dependency chain; Rust is a single static binary
+- **Workload dependency**: Performance characteristics may vary significantly based on the sandboxed workload
+- **Platform specificity**: Measurements taken on macOS ARM64; results may differ on other platforms
+
+### Limitations
+
+The current performance measurements are informal observations rather than rigorous benchmarks. For production use cases, we recommend:
+
+1. Conducting application-specific benchmarking with your actual workloads
+2. Measuring end-to-end latency including network proxy overhead
+3. Profiling memory usage patterns over extended runtime periods
+4. Testing with realistic filesystem and network access patterns
+
+### Establishing Rigorous Benchmarks
+
+To establish scientifically valid performance benchmarks, the following methodology should be implemented:
+
+#### 1. Benchmark Suite Design
+
+A proper benchmark suite should include:
+
+- **Microbenchmarks**: Isolated measurements of specific operations
+  - Sandbox initialization time
+  - Process spawn overhead
+  - Network proxy latency per request
+  - Filesystem access overhead per operation
+
+- **Macrobenchmarks**: Real-world representative workloads
+  - Running a Node.js application through the sandbox
+  - Git operations (clone, fetch, push)
+  - Package manager operations (npm install, cargo build)
+  - Multi-process workloads
+
+#### 2. Measurement Tools
+
+- **Time measurements**: Use `hyperfine` for statistical analysis of command execution times
+  ```bash
+  hyperfine --warmup 3 --runs 100 'srt echo "hello"'
+  ```
+
+- **Memory profiling**: Use system tools for memory measurement
+  - macOS: `/usr/bin/time -l` or `leaks`
+  - Linux: `/usr/bin/time -v` or `valgrind --tool=massif`
+
+- **System tracing**: Use platform-specific profiling tools
+  - macOS: `instruments` or `dtrace`
+  - Linux: `perf` or `bpftrace`
+
+#### 3. Statistical Rigor
+
+- Run each benchmark multiple times (minimum 30-100 iterations)
+- Calculate mean, median, standard deviation, and confidence intervals
+- Control for system load (run on idle system)
+- Report system specifications (CPU, RAM, OS version)
+
+#### 4. Comparison Fairness
+
+When comparing implementations:
+- Use equivalent configurations
+- Test with identical workloads
+- Measure on the same hardware
+- Account for warmup effects (JIT compilation, disk caching)
+- Report both cold-start and warm-run performance
+
+#### 5. Current Status
+
+**Not yet implemented**: Formal benchmarking infrastructure is not currently in place. The measurements reported above are preliminary observations. Contributions to establish a rigorous benchmark suite are welcome.
+
 ## Development
 
 ```bash
@@ -242,6 +335,56 @@ cargo clippy
 
 # Format code
 cargo fmt
+```
+
+### Continuous Integration
+
+The project uses GitHub Actions for automated testing and quality assurance. On every push and pull request, the following checks are performed:
+
+#### Test Suite (`ci.yml`)
+
+- **Test Matrix**: Tests run on macOS with stable and beta Rust toolchains
+- **Unit Tests**: All unit tests are executed with `cargo test --verbose --all-features`
+- **Doc Tests**: Documentation examples are validated with `cargo test --doc`
+- **Formatting**: Code formatting is checked with `rustfmt`
+- **Linting**: Code quality is verified with `clippy` (warnings treated as errors)
+- **Build Verification**: Release binaries are built for both x86_64 and aarch64 architectures
+- **Security Audit**: Dependencies are scanned for known vulnerabilities with `cargo-audit`
+- **Code Coverage**: Test coverage is measured with `cargo-tarpaulin` (uploaded to Codecov)
+
+#### Release Workflow (`release.yml`)
+
+Triggered when version tags (e.g., `v1.0.0`) are pushed:
+
+- Builds release binaries for both macOS architectures
+- Strips debug symbols for smaller binary size
+- Creates compressed archives with SHA-256 checksums
+- Publishes release artifacts to GitHub Releases
+
+#### Local CI Simulation
+
+To run the same checks locally before pushing:
+
+```bash
+# Run all tests
+cargo test --all-features --verbose
+
+# Check formatting
+cargo fmt --all -- --check
+
+# Run clippy with the same strictness as CI
+cargo clippy --all-targets --all-features -- -D warnings
+
+# Build for release
+cargo build --release
+
+# Security audit
+cargo install cargo-audit
+cargo audit
+
+# Code coverage (requires cargo-tarpaulin)
+cargo install cargo-tarpaulin
+cargo tarpaulin --verbose --all-features --workspace --timeout 120
 ```
 
 ## Implementation Details
