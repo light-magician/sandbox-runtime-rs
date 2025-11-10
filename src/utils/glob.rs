@@ -8,6 +8,7 @@
 //! - `**` - Matches any characters including `/` (multiple path components)
 //! - `?` - Matches exactly one character except `/`
 //! - `[...]` - Character class (passed through to regex)
+//! - `{a,b,c}` - Brace expansion (matches any of the comma-separated alternatives)
 //! - All other characters are escaped as regex literals
 //!
 //! # Examples
@@ -23,12 +24,13 @@
 //!
 //! // Multi-level glob with ** followed by /
 //! let re = glob_to_regex("**/*.py")?;
+//! assert!(re.is_match("main.py")); // **/ matches zero or more directories
 //! assert!(re.is_match("src/main.py"));
 //! assert!(re.is_match("src/sub/test.py"));
 //!
-//! // Double asterisk with slash (requires at least one path component)
+//! // Double asterisk with slash (matches zero or more path components)
 //! let re = glob_to_regex("**/main.rs")?;
-//! assert!(!re.is_match("main.rs")); // ** with / requires /
+//! assert!(re.is_match("main.rs")); // **/ matches zero directories
 //! assert!(re.is_match("src/main.rs"));
 //!
 //! // Character class
@@ -64,6 +66,7 @@ use regex::Regex;
 /// - `?` matches exactly one character except `/`
 /// - `[abc]` matches any character in the character class
 /// - `[a-z]` matches any character in the range
+/// - `{a,b,c}` matches any of the comma-separated alternatives (brace expansion)
 /// - All other characters are treated as literals (regex special chars are escaped)
 ///
 /// # Examples
@@ -83,9 +86,9 @@ use regex::Regex;
 /// assert!(re.is_match("src/utils/helpers.py"));
 /// assert!(re.is_match("src/deep/nested/module.py"));
 ///
-/// // Double asterisk with slash requires at least one path component
+/// // Double asterisk with slash matches zero or more path components
 /// let re = glob_to_regex("**/test.rs")?;
-/// assert!(!re.is_match("test.rs")); // ** with / requires / in the path
+/// assert!(re.is_match("test.rs")); // **/ matches zero directories
 /// assert!(re.is_match("src/test.rs"));
 /// assert!(re.is_match("src/nested/test.rs"));
 ///
@@ -121,11 +124,13 @@ pub fn glob_to_regex(glob: &str) -> Result<Regex> {
 /// The algorithm iterates through the glob pattern:
 /// 1. For `*` characters:
 ///    - Check if followed by another `*` (lookahead)
-///    - `**` becomes `.*` (matches anything including `/`)
+///    - `**/` becomes `(?:.*/)?` (optionally matches any path with trailing `/`)
+///    - `**` (not followed by `/`) becomes `.*` (matches anything including `/`)
 ///    - Single `*` becomes `[^/]*` (matches anything except `/`)
 /// 2. For `?` characters: becomes `[^/]` (single non-slash char)
 /// 3. For `[` characters: find the matching `]` and pass the class through
-/// 4. For all other characters: escape them for regex safety
+/// 4. For `{` characters: find the matching `}`, split by `,`, and convert to `(?:alt1|alt2|...)`
+/// 5. For all other characters: escape them for regex safety
 ///
 /// The result is wrapped with `^` and `$` anchors to match the entire path.
 fn glob_to_regex_string(glob: &str) -> Result<String> {
@@ -140,9 +145,17 @@ fn glob_to_regex_string(glob: &str) -> Result<String> {
             '*' => {
                 // Check for double asterisk
                 if i + 1 < glob_bytes.len() && glob_bytes[i + 1] as char == '*' {
-                    // ** matches anything including /
-                    regex.push_str(".*");
-                    i += 2;
+                    // Check if ** is followed by /
+                    if i + 2 < glob_bytes.len() && glob_bytes[i + 2] as char == '/' {
+                        // **/ should match zero or more directories
+                        // (?:.*/)?  means: optionally match any characters followed by /
+                        regex.push_str("(?:.*/)?");
+                        i += 3; // Skip **, and /
+                    } else {
+                        // ** without / matches anything including /
+                        regex.push_str(".*");
+                        i += 2;
+                    }
                 } else {
                     // Single * matches anything except /
                     regex.push_str("[^/]*");
@@ -163,6 +176,33 @@ fn glob_to_regex_string(glob: &str) -> Result<String> {
                 } else {
                     return Err(anyhow!(
                         "Unclosed character class '[' at position {} in glob pattern: {}",
+                        i,
+                        glob
+                    ));
+                }
+            }
+            '{' => {
+                // Brace expansion: convert {a,b,c} to (?:a|b|c)
+                if let Some(close_idx) = glob[i..].find('}') {
+                    let content = &glob[i + 1..i + close_idx];
+                    let alternatives: Vec<&str> = content.split(',').collect();
+
+                    // Build regex alternation: (?:alt1|alt2|...)
+                    regex.push_str("(?:");
+                    for (idx, alt) in alternatives.iter().enumerate() {
+                        if idx > 0 {
+                            regex.push('|');
+                        }
+                        // Escape each alternative to handle regex special chars
+                        let escaped = regex::escape(alt);
+                        regex.push_str(&escaped);
+                    }
+                    regex.push(')');
+
+                    i += close_idx + 1;
+                } else {
+                    return Err(anyhow!(
+                        "Unclosed brace expansion '{{' at position {} in glob pattern: {}",
                         i,
                         glob
                     ));
@@ -239,18 +279,18 @@ mod tests {
     #[test]
     fn test_double_asterisk() -> Result<()> {
         let re = glob_to_regex("**/*.py")?;
-        assert!(!re.is_match("script.py")); // ** requires / after it in this pattern
+        assert!(re.is_match("script.py")); // **/ matches zero directories
+        assert!(re.is_match("src.py")); // **/ matches zero directories
         assert!(re.is_match("src/main.py"));
         assert!(re.is_match("src/utils/helpers.py"));
-        assert!(!re.is_match("src.py")); // Needs the / before *
         Ok(())
     }
 
     #[test]
     fn test_double_asterisk_at_start() -> Result<()> {
-        // **/pattern requires at least one / after **
+        // **/pattern matches zero or more directories
         let re = glob_to_regex("**/test.rs")?;
-        assert!(!re.is_match("test.rs")); // No / before test.rs
+        assert!(re.is_match("test.rs")); // **/ matches zero directories
         assert!(re.is_match("src/test.rs"));
         assert!(re.is_match("src/deep/nested/test.rs"));
         assert!(!re.is_match("test.ts"));
@@ -316,6 +356,57 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("Unclosed character class"));
+    }
+
+    #[test]
+    fn test_brace_expansion_simple() -> Result<()> {
+        let re = glob_to_regex("*.{js,ts}")?;
+        assert!(re.is_match("app.js"));
+        assert!(re.is_match("config.ts"));
+        assert!(!re.is_match("main.rs"));
+        assert!(!re.is_match("test.py"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_brace_expansion_multiple_alternatives() -> Result<()> {
+        let re = glob_to_regex("*.{html,css,js,ts}")?;
+        assert!(re.is_match("index.html"));
+        assert!(re.is_match("styles.css"));
+        assert!(re.is_match("app.js"));
+        assert!(re.is_match("types.ts"));
+        assert!(!re.is_match("main.rs"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_brace_expansion_with_path() -> Result<()> {
+        let re = glob_to_regex("src/*.{py,java}")?;
+        assert!(re.is_match("src/main.py"));
+        assert!(re.is_match("src/Main.java"));
+        assert!(!re.is_match("src/main.rs"));
+        assert!(!re.is_match("test/main.py")); // Wrong directory
+        Ok(())
+    }
+
+    #[test]
+    fn test_brace_expansion_special_chars() -> Result<()> {
+        // Test that special regex chars in alternatives are escaped
+        let re = glob_to_regex("*.{c++,c}")?;
+        assert!(re.is_match("main.c++"));
+        assert!(re.is_match("util.c"));
+        assert!(!re.is_match("main.cpp"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_unclosed_brace_expansion() {
+        let result = glob_to_regex_string("*.{js,ts");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unclosed brace expansion"));
     }
 
     #[test]
@@ -400,9 +491,10 @@ mod tests {
     fn test_leading_slash() -> Result<()> {
         // Absolute paths
         let re = glob_to_regex("/var/log/*.log")?;
-        assert!(re.is_match("/var/log/syslog"));
+        assert!(re.is_match("/var/log/system.log"));
         assert!(re.is_match("/var/log/auth.log"));
-        assert!(!re.is_match("var/log/syslog")); // Missing leading /
+        assert!(!re.is_match("/var/log/syslog")); // Doesn't end with .log
+        assert!(!re.is_match("var/log/system.log")); // Missing leading /
         Ok(())
     }
 }

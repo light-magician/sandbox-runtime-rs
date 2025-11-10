@@ -197,7 +197,9 @@ impl NetworkFilter {
             return false;
         }
 
-        allowed.iter().any(|pattern| matches_pattern(domain, pattern))
+        allowed
+            .iter()
+            .any(|pattern| matches_pattern(domain, pattern))
     }
 }
 
@@ -251,7 +253,8 @@ async fn handle_request(
 /// for end-to-end encrypted connections.
 async fn handle_connect(req: Request<Incoming>) -> Result<Response<Full<Bytes>>> {
     let uri = req.uri();
-    let host_port = uri.authority()
+    let host_port = uri
+        .authority()
         .context("Missing authority in CONNECT request")?
         .as_str();
 
@@ -269,11 +272,8 @@ async fn handle_connect(req: Request<Incoming>) -> Result<Response<Full<Bytes>>>
                         let mut upgraded = TokioIo::new(upgraded);
 
                         // Bidirectional copy
-                        if let Err(e) = tokio::io::copy_bidirectional(
-                            &mut upgraded,
-                            &mut upstream,
-                        )
-                        .await
+                        if let Err(e) =
+                            tokio::io::copy_bidirectional(&mut upgraded, &mut upstream).await
                         {
                             tracing::debug!("Tunnel error: {}", e);
                         }
@@ -371,11 +371,7 @@ fn extract_host(req: &Request<Incoming>) -> Option<String> {
 
 /// Strips the port from a host:port string.
 fn strip_port(host_port: &str) -> String {
-    host_port
-        .split(':')
-        .next()
-        .unwrap_or(host_port)
-        .to_string()
+    host_port.split(':').next().unwrap_or(host_port).to_string()
 }
 
 /// Parses "host:port" into separate components.
@@ -386,9 +382,7 @@ fn parse_host_port(host_port: &str) -> Result<(String, u16)> {
     }
 
     let host = parts[0].to_string();
-    let port = parts[1]
-        .parse::<u16>()
-        .context("Invalid port number")?;
+    let port = parts[1].parse::<u16>().context("Invalid port number")?;
 
     Ok((host, port))
 }
@@ -396,9 +390,7 @@ fn parse_host_port(host_port: &str) -> Result<(String, u16)> {
 /// Builds an absolute URI for the upstream request.
 fn build_upstream_uri(uri: &Uri, host: &str) -> Result<Uri> {
     let scheme = uri.scheme_str().unwrap_or("http");
-    let path = uri.path_and_query()
-        .map(|pq| pq.as_str())
-        .unwrap_or("/");
+    let path = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
 
     let uri_str = format!("{}://{}{}", scheme, host, path);
     uri_str.parse().context("Failed to parse upstream URI")

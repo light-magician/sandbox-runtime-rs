@@ -286,7 +286,10 @@ impl SandboxManager {
 
         tracing::info!(
             "Sandboxed process exited with status: {}",
-            status.code().map(|c| c.to_string()).unwrap_or_else(|| "signal".to_string())
+            status
+                .code()
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "signal".to_string())
         );
 
         Ok(status)

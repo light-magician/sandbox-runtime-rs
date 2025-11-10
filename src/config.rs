@@ -21,6 +21,8 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use crate::utils::glob;
+
 /// Configuration for filesystem access restrictions.
 ///
 /// Defines which paths are allowed for reading/writing and which are blocked.
@@ -367,8 +369,8 @@ impl SandboxConfig {
     /// ```
     pub fn from_json_string(json: &str) -> Result<Self> {
         // Parse JSON
-        let config: SandboxConfig = serde_json::from_str(json)
-            .context("Failed to parse JSON configuration")?;
+        let config: SandboxConfig =
+            serde_json::from_str(json).context("Failed to parse JSON configuration")?;
 
         // Validate the configuration
         config.validate()?;
@@ -383,8 +385,7 @@ impl SandboxConfig {
     /// Returns an error if the configuration cannot be serialized to JSON.
     /// This should rarely happen unless there are serialization issues.
     pub fn to_json_string(&self) -> Result<String> {
-        serde_json::to_string_pretty(self)
-            .context("Failed to serialize configuration to JSON")
+        serde_json::to_string_pretty(self).context("Failed to serialize configuration to JSON")
     }
 
     /// Validates the entire sandbox configuration.
@@ -418,14 +419,20 @@ impl SandboxConfig {
     /// ```
     pub fn merge(&mut self, other: SandboxConfig) -> Result<()> {
         // Merge filesystem paths
-        self.filesystem.allowed_paths.extend(other.filesystem.allowed_paths);
-        self.filesystem.blocked_paths.extend(other.filesystem.blocked_paths);
+        self.filesystem
+            .allowed_paths
+            .extend(other.filesystem.allowed_paths);
+        self.filesystem
+            .blocked_paths
+            .extend(other.filesystem.blocked_paths);
 
         // Merge network settings
         if other.network.enabled {
             self.network.enabled = true;
         }
-        self.network.allowed_domains.extend(other.network.allowed_domains);
+        self.network
+            .allowed_domains
+            .extend(other.network.allowed_domains);
 
         // Re-validate after merge
         self.validate()
@@ -463,10 +470,7 @@ fn validate_domain_string(domain: &str) -> Result<()> {
     // Allow: alphanumerics, dots, hyphens, asterisks (for wildcards)
     for ch in domain.chars() {
         if !ch.is_alphanumeric() && ch != '.' && ch != '-' && ch != '*' {
-            return Err(anyhow!(
-                "Domain contains invalid character: {}",
-                ch
-            ));
+            return Err(anyhow!("Domain contains invalid character: {}", ch));
         }
     }
 
@@ -488,59 +492,10 @@ fn validate_domain_string(domain: &str) -> Result<()> {
 ///
 /// Returns `true` if the path matches the pattern.
 fn glob_matches(path: &str, pattern: &str) -> bool {
-    glob_to_regex(pattern)
+    glob::glob_to_regex(pattern)
+        .ok()
         .map(|regex| regex.is_match(path))
         .unwrap_or(false)
-}
-
-/// Converts a glob pattern to a compiled regex for matching.
-///
-/// # Arguments
-///
-/// * `glob` - The glob pattern to convert
-///
-/// Returns the compiled regex, or `None` if the pattern is invalid.
-fn glob_to_regex(glob: &str) -> Option<regex::Regex> {
-    let mut regex = String::from("^");
-    let mut chars = glob.chars().peekable();
-
-    while let Some(ch) = chars.next() {
-        match ch {
-            '*' => {
-                if chars.peek() == Some(&'*') {
-                    // ** matches anything including /
-                    regex.push_str(".*");
-                    chars.next(); // consume second *
-                } else {
-                    // * matches anything except /
-                    regex.push_str("[^/]*");
-                }
-            }
-            '?' => {
-                // ? matches single char except /
-                regex.push_str("[^/]");
-            }
-            '[' => {
-                // Character class - pass through until ]
-                regex.push('[');
-                while let Some(ch) = chars.next() {
-                    regex.push(ch);
-                    if ch == ']' {
-                        break;
-                    }
-                }
-            }
-            // Escape regex special characters
-            '.' | '+' | '^' | '$' | '(' | ')' | '{' | '}' | '|' | '\\' => {
-                regex.push('\\');
-                regex.push(ch);
-            }
-            _ => regex.push(ch),
-        }
-    }
-
-    regex.push('$');
-    regex::Regex::new(&regex).ok()
 }
 
 /// Matches a domain against a domain pattern.
@@ -570,10 +525,13 @@ fn domain_matches(domain: &str, pattern: &str) -> bool {
     // Prefix wildcard: *.example.com matches any subdomain
     if pattern.starts_with("*.") {
         let suffix = &pattern[2..]; // Remove "*."
-        if domain.ends_with(suffix) {
-            // Ensure it's a subdomain (has at least one dot separator)
-            let prefix = &domain[..domain.len() - suffix.len() - 1];
-            return !prefix.contains('.');
+        if domain.ends_with(suffix) && domain.len() > suffix.len() {
+            // Check if there's a dot separator before the suffix
+            let prefix_end = domain.len() - suffix.len();
+            if prefix_end > 0 && domain.as_bytes()[prefix_end - 1] == b'.' {
+                let prefix = &domain[..prefix_end - 1];
+                return !prefix.is_empty();
+            }
         }
     }
 
@@ -586,29 +544,22 @@ mod tests {
 
     #[test]
     fn test_filesystem_config_new() {
-        let config = FilesystemConfig::new(
-            vec!["/tmp".to_string()],
-            vec!["/etc/shadow".to_string()],
-        );
+        let config =
+            FilesystemConfig::new(vec!["/tmp".to_string()], vec!["/etc/shadow".to_string()]);
         assert_eq!(config.allowed_paths.len(), 1);
         assert_eq!(config.blocked_paths.len(), 1);
     }
 
     #[test]
     fn test_filesystem_config_validate() {
-        let config = FilesystemConfig::new(
-            vec!["/tmp".to_string()],
-            vec!["/etc/shadow".to_string()],
-        );
+        let config =
+            FilesystemConfig::new(vec!["/tmp".to_string()], vec!["/etc/shadow".to_string()]);
         assert!(config.validate().is_ok());
     }
 
     #[test]
     fn test_filesystem_config_validate_null_bytes() {
-        let config = FilesystemConfig::new(
-            vec!["/tmp\0invalid".to_string()],
-            vec![],
-        );
+        let config = FilesystemConfig::new(vec!["/tmp\0invalid".to_string()], vec![]);
         assert!(config.validate().is_err());
     }
 
@@ -627,10 +578,7 @@ mod tests {
 
     #[test]
     fn test_network_config_new() {
-        let config = NetworkConfig::new(
-            true,
-            vec!["*.example.com".to_string()],
-        );
+        let config = NetworkConfig::new(true, vec!["*.example.com".to_string()]);
         assert!(config.enabled);
         assert_eq!(config.allowed_domains.len(), 1);
     }
@@ -662,10 +610,7 @@ mod tests {
 
     #[test]
     fn test_network_config_is_domain_allowed_disabled() {
-        let config = NetworkConfig::new(
-            false,
-            vec!["*.example.com".to_string()],
-        );
+        let config = NetworkConfig::new(false, vec!["*.example.com".to_string()]);
         assert!(!config.is_domain_allowed("example.com"));
     }
 
@@ -730,14 +675,14 @@ mod tests {
 
     #[test]
     fn test_glob_to_regex_star() {
-        let regex = glob_to_regex("*.txt").unwrap();
+        let regex = glob::glob_to_regex("*.txt").unwrap();
         assert!(regex.is_match("file.txt"));
         assert!(!regex.is_match("dir/file.txt"));
     }
 
     #[test]
     fn test_glob_to_regex_double_star() {
-        let regex = glob_to_regex("**/*.py").unwrap();
+        let regex = glob::glob_to_regex("**/*.py").unwrap();
         assert!(regex.is_match("file.py"));
         assert!(regex.is_match("dir/file.py"));
         assert!(regex.is_match("deep/nested/dir/file.py"));
@@ -745,14 +690,14 @@ mod tests {
 
     #[test]
     fn test_glob_to_regex_question() {
-        let regex = glob_to_regex("file?.txt").unwrap();
+        let regex = glob::glob_to_regex("file?.txt").unwrap();
         assert!(regex.is_match("file1.txt"));
         assert!(!regex.is_match("file12.txt"));
     }
 
     #[test]
     fn test_glob_to_regex_character_class() {
-        let regex = glob_to_regex("file[abc].txt").unwrap();
+        let regex = glob::glob_to_regex("file[abc].txt").unwrap();
         assert!(regex.is_match("filea.txt"));
         assert!(regex.is_match("fileb.txt"));
         assert!(!regex.is_match("filed.txt"));

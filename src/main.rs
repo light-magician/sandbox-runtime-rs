@@ -114,8 +114,8 @@ async fn main() -> Result<()> {
 fn initialize_logging(debug: bool) -> Result<()> {
     let log_level = if debug { "debug" } else { "info" };
 
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(log_level));
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(log_level));
 
     tracing_subscriber::fmt()
         .with_env_filter(env_filter)
@@ -160,7 +160,14 @@ mod tests {
 
     #[test]
     fn test_cli_parsing_all_options() {
-        let args = vec!["srt", "-s", "sandbox.json", "-d", "curl", "https://example.com"];
+        let args = vec![
+            "srt",
+            "-s",
+            "sandbox.json",
+            "-d",
+            "curl",
+            "https://example.com",
+        ];
         let cli = Cli::try_parse_from(args).unwrap();
         assert_eq!(cli.command, vec!["curl", "https://example.com"]);
         assert_eq!(cli.settings, Some(PathBuf::from("sandbox.json")));

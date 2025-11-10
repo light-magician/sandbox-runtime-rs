@@ -206,10 +206,7 @@ fn generate_file_write_rules(config: &SandboxConfig) -> String {
                     }
                     Err(_) => {
                         // Invalid glob pattern - skip with comment
-                        rules.push_str(&format!(
-                            ";; Skipped invalid glob pattern: {}\n",
-                            path
-                        ));
+                        rules.push_str(&format!(";; Skipped invalid glob pattern: {}\n", path));
                     }
                 }
             } else {
@@ -217,7 +214,10 @@ fn generate_file_write_rules(config: &SandboxConfig) -> String {
                 if path.ends_with('/') || path.ends_with("**") {
                     // Directory path: use subpath
                     let clean_path = path.trim_end_matches('/').trim_end_matches("**");
-                    rules.push_str(&format!("(allow file-write*\n  (subpath \"{}\"))\n", clean_path));
+                    rules.push_str(&format!(
+                        "(allow file-write*\n  (subpath \"{}\"))\n",
+                        clean_path
+                    ));
                 } else {
                     // File path: use literal
                     rules.push_str(&format!("(allow file-write*\n  (literal \"{}\"))\n", path));
@@ -273,9 +273,15 @@ fn generate_file_read_rules(config: &SandboxConfig) -> String {
             // Literal path
             if path.ends_with('/') || path.ends_with("**") {
                 let clean_path = path.trim_end_matches('/').trim_end_matches("**");
-                rules.push_str(&format!("(deny file-read-data\n  (subpath \"{}\"))\n", clean_path));
+                rules.push_str(&format!(
+                    "(deny file-read-data\n  (subpath \"{}\"))\n",
+                    clean_path
+                ));
             } else {
-                rules.push_str(&format!("(deny file-read-data\n  (literal \"{}\"))\n", path));
+                rules.push_str(&format!(
+                    "(deny file-read-data\n  (literal \"{}\"))\n",
+                    path
+                ));
             }
         }
     }
@@ -315,7 +321,8 @@ fn generate_move_blocking_rules(config: &SandboxConfig) -> String {
     rules.push_str(";; ============================================================\n");
     rules.push_str(";; MOVE-BLOCKING RULES (Security Critical)\n");
     rules.push_str(";; ============================================================\n");
-    rules.push_str(";; Prevent bypassing read restrictions by moving files to writable locations\n");
+    rules
+        .push_str(";; Prevent bypassing read restrictions by moving files to writable locations\n");
     rules.push_str(";; Example attack: mv /restricted/secret.txt /tmp/secret.txt\n");
     rules.push_str(";; Defense: Block file-write-create (includes mv) for restricted paths\n\n");
 
@@ -509,8 +516,8 @@ pub async fn launch_with_seatbelt(command: &[String], profile: &str) -> Result<C
     }
 
     // Create temporary file for Seatbelt profile
-    let mut temp_file = NamedTempFile::new()
-        .context("Failed to create temporary file for Seatbelt profile")?;
+    let mut temp_file =
+        NamedTempFile::new().context("Failed to create temporary file for Seatbelt profile")?;
 
     // Write profile to temp file (synchronous I/O is fine for small profiles)
     temp_file
@@ -526,17 +533,11 @@ pub async fn launch_with_seatbelt(command: &[String], profile: &str) -> Result<C
     let profile_path = temp_file.path();
 
     // Log the profile path for debugging
-    tracing::debug!(
-        "Seatbelt profile written to: {}",
-        profile_path.display()
-    );
+    tracing::debug!("Seatbelt profile written to: {}", profile_path.display());
 
     // Build sandbox-exec command
     let mut sandbox_cmd = Command::new("sandbox-exec");
-    sandbox_cmd
-        .arg("-f")
-        .arg(profile_path)
-        .args(command);
+    sandbox_cmd.arg("-f").arg(profile_path).args(command);
 
     // Persist the temp file so it doesn't get deleted when it goes out of scope
     // sandbox-exec reads the file synchronously when it starts, so we need to keep it
@@ -639,7 +640,9 @@ pub async fn monitor_sandbox_violations(process_id: u32) -> Result<Child> {
                     // Check if it's a sandbox violation
                     if let Some(subsystem) = entry.get("subsystem").and_then(|v| v.as_str()) {
                         if subsystem == "com.apple.sandbox.reporting" {
-                            if let Some(message) = entry.get("eventMessage").and_then(|v| v.as_str()) {
+                            if let Some(message) =
+                                entry.get("eventMessage").and_then(|v| v.as_str())
+                            {
                                 tracing::error!("Sandbox violation: {}", message);
                             }
                         }
@@ -690,11 +693,7 @@ pub fn tag_command(command: &[String]) -> Vec<String> {
     let tag = general_purpose::STANDARD.encode(metadata.to_string());
 
     // Prepend echo command
-    let tagged_command = format!(
-        "echo '{}' && {}",
-        tag,
-        command.join(" ")
-    );
+    let tagged_command = format!("echo '{}' && {}", tag, command.join(" "));
 
     vec!["sh".to_string(), "-c".to_string(), tagged_command]
 }
@@ -747,10 +746,7 @@ mod tests {
     #[test]
     fn test_generate_move_blocking_rules() {
         let config = SandboxConfig::new(
-            FilesystemConfig::new(
-                vec![],
-                vec!["/etc/shadow".to_string()],
-            ),
+            FilesystemConfig::new(vec![], vec!["/etc/shadow".to_string()]),
             NetworkConfig::default(),
         );
 
@@ -840,6 +836,9 @@ mod tests {
         // Verify structure integrity
         let open_parens = profile.matches('(').count();
         let close_parens = profile.matches(')').count();
-        assert_eq!(open_parens, close_parens, "Unbalanced parentheses in S-expression");
+        assert_eq!(
+            open_parens, close_parens,
+            "Unbalanced parentheses in S-expression"
+        );
     }
 }

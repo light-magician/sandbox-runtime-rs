@@ -1,0 +1,20 @@
+# Rust formatting configuration (stable features only)
+# This ensures consistent code formatting across the project
+
+# Edition must match Cargo.toml
+edition = "2021"
+
+# Maximum width of each line
+max_width = 100
+
+# Use spaces for indentation (not tabs)
+hard_tabs = false
+
+# Number of spaces per tab
+tab_spaces = 4
+
+# Reorder imports alphabetically (stable)
+reorder_imports = true
+
+# Reorder modules declarations alphabetically (stable)
+reorder_modules = true
